@@ -3,7 +3,7 @@
 #include <string.h>
 
 typedef float float3[3];
-typedef int		int3[3];
+typedef int	  int3[3];
 typedef float float2[2];
 
 enum { X, Y, Z };
