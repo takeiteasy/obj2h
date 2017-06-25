@@ -200,7 +200,7 @@ void obj2h(const char* p) {
 		fprintf(out_fh, "static float %s_texcoords[] = {\n", obj_name);
 
 		for (int i = 0; i < num_f * 3; ++i) {
-			float2* tmp = &data.uvs[vn_indices[i] - 1];
+			float2* tmp = &data.uvs[vt_indices[i] - 1];
 			fprintf(out_fh, "\t%f, %f,\n", (*tmp)[X], (*tmp)[Y]);
 		}
 
