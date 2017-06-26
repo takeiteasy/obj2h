@@ -6,7 +6,12 @@
 #include <SDL2/SDL_opengl.h>
 
 #include "linmath.h"
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
 #include "untitled_obj.h"
+
+#define PI180 .01745329251994329576f
+#define DEG2RAD(X) (X * PI180)
 
 const int SCREEN_WIDTH = 640, SCREEN_HEIGHT = 480;
 
@@ -29,6 +34,35 @@ char* __load_file(const char* path) {
 	fclose(file);
 
 	return data;
+}
+
+GLuint load_texture(const char* path) {
+	GLuint texture = 0;
+	glGenTextures(1, &texture);
+	
+	glBindTexture(GL_TEXTURE_2D, texture);
+	
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	
+	int width, height, chans;
+	unsigned char* data = stbi_load(path, &width, &height, &chans, 0);
+	
+	if (!data) {
+		fprintf(stderr, "stbi_load failed to load \"%s\"\n", path);
+		abort();
+	}
+	
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+	glGenerateMipmap(GL_TEXTURE_2D);
+	
+	stbi_image_free(data);
+	
+	glBindTexture(GL_TEXTURE_2D, 0);
+	
+	return texture;
 }
 
 GLuint __make_shader(GLenum type, const char* src) {
@@ -85,7 +119,7 @@ GLuint __make_program(GLuint vert, GLuint frag) {
 
 GLuint load_shader(const char* vert, const char* frag) {
 	return __make_program(__make_shader(GL_VERTEX_SHADER,		vert),
-			__make_shader(GL_FRAGMENT_SHADER, frag));
+			   __make_shader(GL_FRAGMENT_SHADER, frag));
 }
 
 void cleanup() {
@@ -137,36 +171,66 @@ int main(int argc, const char* argv[]) {
 
 	atexit(cleanup);
 
-	mat4x4 proj, view;
-	mat4x4_perspective(proj, 45.f, (float)SCREEN_WIDTH / (float)SCREEN_HEIGHT, .1f, 1000.f);
+	mat4x4 p, v, m;
+	mat4x4_perspective(p, 45.f, (float)SCREEN_WIDTH / (float)SCREEN_HEIGHT, .1f, 1000.f);
 	vec3 eye = { 0.f, 0.f, 3.f };
 	vec3 cen = { 0.f, 0.f, 0.0f };
 	vec3 up  = { 0.f, 1.f, 0.f };
-	mat4x4_look_at(view, eye, cen, up);
+	mat4x4_look_at(v, eye, cen, up);
+	mat4x4_identity(m);
+
+	GLuint texture = load_texture("earth.jpg");
 
 	GLuint shader = load_shader("test.vert.glsl", "test.frag.glsl");
 
-	GLuint proj_loc = glGetUniformLocation(shader, "projection");
-	GLuint view_loc = glGetUniformLocation(shader, "view");
+	GLuint p_loc = glGetUniformLocation(shader, "projection");
+	GLuint v_loc = glGetUniformLocation(shader, "view");
+	GLuint m_loc = glGetUniformLocation(shader, "model");
 
-	unsigned int VBO, VAO;
+	unsigned int VBO_v, VBO_vt, VBO_vn, VAO;
 	glGenVertexArrays(1, &VAO);
-	glGenBuffers(1, &VBO);
+	glGenBuffers(1, &VBO_v);
+	glGenBuffers(1, &VBO_vt);
+	glGenBuffers(1, &VBO_vn);
 
 	glBindVertexArray(VAO);
 
-	glBindBuffer(GL_ARRAY_BUFFER, VBO);
+	glBindBuffer(GL_ARRAY_BUFFER, VBO_v);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(Sphere_vertices), Sphere_vertices, GL_STATIC_DRAW);
 
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
 	glEnableVertexAttribArray(0);
 
+
+	glBindBuffer(GL_ARRAY_BUFFER, VBO_vn);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(Sphere_normals), Sphere_normals, GL_STATIC_DRAW);
+
+	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+	glEnableVertexAttribArray(1);
+
+	glBindBuffer(GL_ARRAY_BUFFER, VBO_vt);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(Sphere_texcoords), Sphere_texcoords, GL_STATIC_DRAW);
+
+	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
+	glEnableVertexAttribArray(2);
+
 	glBindVertexArray(0);
+
+	glDeleteBuffers(1, &VBO_v);
+	glDeleteBuffers(1, &VBO_vn);
+	glDeleteBuffers(1, &VBO_vt);
+
+	Uint32 old_time, current_time = SDL_GetTicks();
+	float delta;
 
 	SDL_bool running = SDL_TRUE;
 	const Uint8* keys;
 	SDL_Event e;
 	while (running) {
+		old_time = current_time;
+		current_time = SDL_GetTicks();
+		delta = (float)(current_time - old_time) / 1000.0f;
+
 		while (SDL_PollEvent(&e)) {
 			switch (e.type) {
 				case SDL_QUIT:
@@ -179,12 +243,19 @@ int main(int argc, const char* argv[]) {
 		if (keys[SDL_GetScancodeFromKey(SDLK_ESCAPE)])
 			running = SDL_FALSE;
 
+		mat4x4_rotate_Y(m, m, DEG2RAD(5.f) * delta);
+
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 		glUseProgram(shader);
 
-		glUniformMatrix4fv(proj_loc, 1, GL_FALSE, &proj[0][0]);
-		glUniformMatrix4fv(view_loc, 1, GL_FALSE, &view[0][0]);
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, texture);
+		glUniform1i(glGetUniformLocation(shader, "texture_diffuse"), 0);
+
+		glUniformMatrix4fv(p_loc, 1, GL_FALSE, &p[0][0]);
+		glUniformMatrix4fv(v_loc, 1, GL_FALSE, &v[0][0]);
+		glUniformMatrix4fv(m_loc, 1, GL_FALSE, &m[0][0]);
 
 		glBindVertexArray(VAO);
 		glDrawArrays(GL_TRIANGLES, 0, Sphere_num_vertices);
@@ -196,7 +267,6 @@ int main(int argc, const char* argv[]) {
 	}
 
 	glDeleteProgram(shader);
-	glDeleteBuffers(1, &VBO);
 	glDeleteVertexArrays(1, &VAO);
 
 	return 0;
