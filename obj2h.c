@@ -115,14 +115,14 @@ void obj2h(const char* p) {
 	fprintf(out_fh, "static float %s_vertices[] = {\n", obj_name);
 
 	for (int i = 0; i < num_v; ++i)
-		fprintf(out_fh, "\t%f, %f, %f,\n", v_indices[i][X], v_indices[i][Y], v_indices[i][Z]);
+		fprintf(out_fh, "\t%f, %f, %f, 0.0f,\n", v_indices[i][X], v_indices[i][Y], v_indices[i][Z]);
 
 	fprintf(out_fh, "};\n\n");
 
 	fprintf(out_fh, "static uint32_t %s_indices[] = {\n", obj_name);
 
 	for (int i = 0; i < num_f * 3;) {
-		fprintf(out_fh, "\t%d, %d, %d,\n", f_indices[i], f_indices[i + 1], f_indices[i + 2]);
+		fprintf(out_fh, "\t%d, %d, %d,\n", f_indices[i] - 1, f_indices[i + 1] - 1, f_indices[i + 2] - 1);
 		i += 3;
 	}
 
